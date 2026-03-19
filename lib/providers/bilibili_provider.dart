@@ -113,12 +113,19 @@ class BilibiliProvider extends ChangeNotifier {
   String qrLoginStatus = '';
 
   Future<void> startQrLogin() async {
-    final result = await _service.generateQrCode();
-    qrCodeUrl = result['url'];
-    _qrcodeKey = result['qrcode_key'];
-    qrLoginStatus = '等待扫码...';
-    notifyListeners();
-    _pollQrLogin();
+    try {
+      qrLoginStatus = '正在生成二维码...';
+      notifyListeners();
+      final result = await _service.generateQrCode();
+      qrCodeUrl = result['url'];
+      _qrcodeKey = result['qrcode_key'];
+      qrLoginStatus = '等待扫码...';
+      notifyListeners();
+      _pollQrLogin();
+    } catch (e) {
+      qrLoginStatus = '生成二维码失败: $e';
+      notifyListeners();
+    }
   }
 
   Future<void> _pollQrLogin() async {

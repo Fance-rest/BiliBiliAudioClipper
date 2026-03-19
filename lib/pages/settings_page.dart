@@ -83,20 +83,37 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         _buildSectionHeader('B站账号'),
         _buildCard([
-          if (!provider.isLoggedIn && provider.qrCodeUrl == null)
+          if (!provider.isLoggedIn && provider.qrCodeUrl == null && !provider.qrLoginStatus.startsWith('正在'))
             _buildCardRow(
               isLast: true,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
                 children: [
-                  const Text('未登录', style: TextStyle(fontSize: 15, color: CupertinoColors.systemGrey)),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () => provider.startQrLogin(),
-                    child: const Text('扫码登录', style: TextStyle(color: Color(0xFF007AFF))),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('未登录', style: TextStyle(fontSize: 15, color: CupertinoColors.systemGrey)),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => provider.startQrLogin(),
+                        child: const Text('扫码登录', style: TextStyle(color: Color(0xFF007AFF))),
+                      ),
+                    ],
                   ),
+                  if (provider.qrLoginStatus.contains('失败'))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        provider.qrLoginStatus,
+                        style: const TextStyle(fontSize: 13, color: CupertinoColors.destructiveRed),
+                      ),
+                    ),
                 ],
               ),
+            )
+          else if (provider.qrLoginStatus.startsWith('正在'))
+            _buildCardRow(
+              isLast: true,
+              child: const Center(child: CupertinoActivityIndicator()),
             )
           else if (provider.qrCodeUrl != null)
             _buildCardRow(
