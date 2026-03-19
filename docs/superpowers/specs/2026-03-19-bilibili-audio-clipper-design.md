@@ -59,19 +59,31 @@
 **解析流程：**
 1. 识别输入类型（完整链接 / 短链 / 纯BV号）
 2. 短链通过 HEAD 请求获取 302 重定向目标
-3. 提取 BV 号
-4. 调用 `https://api.bilibili.com/x/web-interface/view?bvid=BVxxx` 获取视频信息（标题、时长、cid）
-5. 调用 `https://api.bilibili.com/x/player/playurl?bvid=BVxxx&cid=xxx&fnval=16` 获取 DASH 音频流地址
-6. 从 DASH 响应的 `data.dash.audio` 中取最高音质的流 URL
+3. 提取 BV 号（支持 BV/AV 互转，使用标准 Base58 算法）
+4. 获取 BUVID 指纹：调用 `https://api.bilibili.com/x/frontend/finger/spi` 获取 `buvid3`/`buvid4`，作为 cookie 附加到后续请求
+5. 调用 `https://api.bilibili.com/x/web-interface/wbi/view?bvid=BVxxx`（需 wbi 签名）获取视频信息（标题、时长、cid）
+6. 调用 `https://api.bilibili.com/x/player/wbi/playurl?bvid=BVxxx&cid=xxx&fnval=4048&fourk=1`（需 wbi 签名）获取 DASH 音频流地址
+7. 从 DASH 响应的 `data.dash.audio` 中取最高音质的流 URL
+
+**WBI 签名（必需）：**
+- 登录后调用 `https://api.bilibili.com/x/web-interface/nav` 获取 `wbi.img_url` 和 `wbi.sub_url`，提取 `imgKey` 和 `subKey`
+- 将 `imgKey + subKey`（64 字符）通过固定的 64 位置换表生成 32 位 `mixinKey`
+- 签名步骤：添加 `wts`（Unix 时间戳）→ 参数按 key 排序 → URL 编码 → MD5(编码结果 + mixinKey) → 添加 `w_rid` 参数
+
+**B站登录（QR 码扫码）：**
+- 调用 `https://passport.bilibili.com/x/passport-login/web/qrcode/generate` 生成二维码 URL 和 `qrcode_key`
+- app 显示二维码，用户用B站 app 扫码
+- 轮询 `https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={key}` 直到登录成功
+- 提取并持久化登录 cookie（含 SESSDATA）
+- 登录后从 nav 接口获取 wbi 密钥
 
 **请求头要求：**
-- `Referer: https://www.bilibili.com`
-- `User-Agent`: 合理的浏览器 UA
+- API 请求：`Referer: https://www.bilibili.com`，`Origin: https://www.bilibili.com`
+- 流下载请求：`Origin: https://m.bilibili.com`
+- `User-Agent`: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36`
+- Cookie：登录 cookie + `buvid3` + `buvid4`
 
-**B站反爬风险与应对：**
-- B站可能要求 wbi 参数签名（2023 年后新增）。实现时需参考 B站 API 逆向文档，对 `playurl` 请求进行 wbi 签名
-- 部分高画质/高音质流可能需要有效的 `SESSDATA` cookie（登录态）。初期先尝试无登录调用，如遇 403 再考虑添加 B站扫码登录功能
-- 如果 B站改接口导致解析失败，需要更新 app 版本
+**参考实现：** [downkyicore](https://github.com/yaobiao131/downkyicore) 项目的 B站 API 调用和 wbi 签名逻辑
 
 ### 2. 音频下载模块
 
@@ -116,13 +128,14 @@
 ### 6. 网易云盘上传模块
 
 **API 服务：**
-- 用户在本地 Mac 上部署 [NeteaseCloudMusicApiEnhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)
-- app 内设置页配置 API 服务地址（如 `http://192.168.1.100:3000`）
-- 手机和电脑需在同一局域网内
+- 用户在闲置 Mac 上部署 [NeteaseCloudMusicApiEnhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)
+- 通过 Tailscale 组建私有 VPN 网络，Mac 获得固定的 Tailscale IP（如 `100.x.x.x`）
+- 手机也安装 Tailscale，即可在任何网络下访问 Mac 上的 API
+- app 内设置页配置 API 服务地址（如 `http://100.x.x.x:3000`）
 
 **Android 明文 HTTP 配置：**
 - Android 9+ 默认禁止明文 HTTP 请求
-- 需要添加 `network_security_config.xml` 允许对本地 API 地址的明文 HTTP 请求
+- 需要添加 `network_security_config.xml` 允许对 Tailscale 网段（100.64.0.0/10）的明文 HTTP 请求
 
 **登录鉴权：**
 - 手机号 + 验证码登录（调用 `/captcha/sent` 发送验证码，`/login/cellphone` 登录）
@@ -139,10 +152,11 @@
 
 ### 7. 设置页
 
-- 网易云 API 服务地址配置
-- 网易云账号登录/登出状态
+- **B站账号**：QR 码扫码登录/登出，显示登录状态
+- **网易云 API 服务地址**配置
+- **网易云账号**：登录/登出状态
 - 使用 `shared_preferences` 持久化存储配置项
-- 登录凭据使用 `flutter_secure_storage` 安全存储
+- 登录凭据和 cookie 使用 `flutter_secure_storage` 安全存储
 
 ## Android 权限
 
