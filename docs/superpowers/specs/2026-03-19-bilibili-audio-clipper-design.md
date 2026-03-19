@@ -192,6 +192,20 @@
 - API 服务不可达：提示检查网络和 API 服务状态
 - 上传失败：提示错误原因，文件保留在本地不删除
 
+## UI 设计参考
+
+Figma 导出的 React 原型位于 `design/` 目录，可用 `npm install && npm run dev` 本地运行查看。
+
+**采用的部分：**
+- 主页面（`design/src/app/components/Home.tsx`）：链接输入、视频信息、播放器、裁剪控制、重命名+上传
+- 设置页（`design/src/app/components/Settings.tsx`）：API 地址配置、网易云账号登录/登出
+- iOS 风格弹窗（`design/src/app/components/IOSAlert.tsx`）：上传成功后的保留/删除选择
+
+**不采用的部分（Figma AI 过度生成）：**
+- "音频质量"选择卡片（B站 DASH 直接取最高音质，无需用户选择）
+- "高级选项"卡片（保留元数据、标准化音量、移除静音 — 超出需求范围）
+- 底部独立的"提取音频"按钮（与"下载音频"按钮重复）
+
 ## 项目结构
 
 ```
