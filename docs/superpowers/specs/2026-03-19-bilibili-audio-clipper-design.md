@@ -237,8 +237,7 @@ Figma 导出的 React 原型位于 `design/` 目录，可用 `npm install && npm
 lib/
 ├── main.dart                  # 入口
 ├── models/
-│   ├── video_info.dart        # B站视频信息模型（标题、时长、cid、封面图URL）
-│   └── audio_file.dart        # 音频文件模型
+│   └── video_info.dart        # B站视频信息模型（标题、时长、cid、封面图URL）
 ├── services/
 │   ├── bilibili_service.dart  # B站链接解析和音频下载
 │   ├── audio_service.dart     # 音频裁剪（FFmpeg）
@@ -252,7 +251,7 @@ lib/
 │   └── settings_page.dart     # 设置页
 └── widgets/
     ├── link_input.dart        # 链接输入组件
-    ├── audio_player.dart      # 播放器组件
+    ├── audio_player_widget.dart # 播放器组件
     ├── clip_controls.dart     # 裁剪控制组件
     └── upload_section.dart    # 重命名+上传组件
 ```
