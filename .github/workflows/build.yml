@@ -21,7 +21,7 @@ jobs:
       - name: 安装 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.41.5'
           channel: 'stable'
 
       - name: 获取依赖
