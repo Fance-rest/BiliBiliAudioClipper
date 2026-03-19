@@ -36,7 +36,6 @@ dependencies:
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
   just_audio: ^0.9.40
-  ffmpeg_kit_flutter_audio: ^6.0.3
   shared_preferences: ^2.3.3
   flutter_secure_storage: ^9.2.2
   path_provider: ^2.1.4

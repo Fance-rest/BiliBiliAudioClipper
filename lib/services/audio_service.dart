@@ -1,7 +1,8 @@
-import 'package:ffmpeg_kit_flutter_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_audio/return_code.dart';
+import 'package:flutter/services.dart';
 
 class AudioService {
+  static const _channel = MethodChannel('com.biliaudioclipper/audio_trimmer');
+
   static String formatDuration(Duration d) {
     final hours = d.inHours.toString().padLeft(2, '0');
     final minutes = (d.inMinutes % 60).toString().padLeft(2, '0');
@@ -22,17 +23,13 @@ class AudioService {
     required Duration start,
     required Duration end,
   }) async {
-    final startStr = formatDuration(start);
-    final endStr = formatDuration(end);
-    final session = await FFmpegKit.execute(
-      '-y -i "$inputPath" -ss $startStr -to $endStr -c copy "$outputPath"',
-    );
-    final returnCode = await session.getReturnCode();
-    if (ReturnCode.isSuccess(returnCode)) {
-      return outputPath;
-    } else {
-      final logs = await session.getLogsAsString();
-      throw Exception('裁剪失败: $logs');
-    }
+    final result = await _channel.invokeMethod<String>('trimAudio', {
+      'inputPath': inputPath,
+      'outputPath': outputPath,
+      'startUs': start.inMicroseconds,
+      'endUs': end.inMicroseconds,
+    });
+    if (result == null) throw Exception('裁剪失败');
+    return result;
   }
 }
