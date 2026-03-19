@@ -8,21 +8,25 @@
 
 ## 技术栈
 
-- **框架**：Flutter（纯客户端方案）
+- **框架**：Flutter（纯客户端方案），最低 Flutter 3.x
 - **状态管理**：provider
-- **HTTP 客户端**：dio
+- **HTTP 客户端**：dio + dio_cookie_manager（管理网易云登录 cookie）
 - **音频播放**：just_audio
-- **音频处理**：ffmpeg_kit_flutter
+- **音频处理**：ffmpeg_kit_flutter（使用 `audio` 精简构建变体，减小体积）
+- **本地存储**：shared_preferences（设置）、flutter_secure_storage（登录凭据）
 - **构建发布**：GitHub Actions → APK → GitHub Release
+- **最低 Android 版本**：API 24（Android 7.0），ffmpeg_kit_flutter 要求
 
 ## 架构
 
-单页面线性流程，不需要多页面导航。用户在一个页面内从上到下完成整个操作。
+主操作为单页面线性流程。设置页通过右上角齿轮图标进入（简单的 Navigator.push）。
 
 ### 页面布局
 
 ```
 ┌─────────────────────────────┐
+│  [⚙] 设置（右上角）          │
+├─────────────────────────────┤
 │  输入区：链接/BV号输入框     │
 │  [解析] 按钮               │
 ├─────────────────────────────┤
@@ -64,6 +68,11 @@
 - `Referer: https://www.bilibili.com`
 - `User-Agent`: 合理的浏览器 UA
 
+**B站反爬风险与应对：**
+- B站可能要求 wbi 参数签名（2023 年后新增）。实现时需参考 B站 API 逆向文档，对 `playurl` 请求进行 wbi 签名
+- 部分高画质/高音质流可能需要有效的 `SESSDATA` cookie（登录态）。初期先尝试无登录调用，如遇 403 再考虑添加 B站扫码登录功能
+- 如果 B站改接口导致解析失败，需要更新 app 版本
+
 ### 2. 音频下载模块
 
 - 使用 `dio` 下载音频流，格式为 `.m4a`
@@ -86,7 +95,7 @@
 - 输入框内有 placeholder 文字提示（"分钟"、"秒"）
 - 输入后可跳转到对应时间试听
 
-**方式 C — 播放标记：**
+**方式 B — 播放标记：**
 - 播放过程中点击"标记起点"按钮，记录当前播放时间为开始时间
 - 点击"标记终点"按钮，记录当前播放时间为结束时间
 - 标记后自动同步填入手动输入框，两种方式互通
@@ -94,6 +103,7 @@
 **裁剪执行：**
 - 使用 `ffmpeg_kit_flutter` 执行：`-i input.m4a -ss 开始时间 -to 结束时间 -c copy output.m4a`
 - `-c copy` 直接拷贝流，不重新编码，速度极快
+- 注意：`-c copy` 在非关键帧位置裁剪时可能导致开头有短暂音频瑕疵。如出现此问题，可回退为重新编码模式：`-c:a aac`（更慢但精确）
 - 如果用户不需要裁剪，跳过此步，直接使用原始文件
 
 ### 5. 重命名模块
@@ -108,24 +118,38 @@
 **API 服务：**
 - 用户在本地 Mac 上部署 [NeteaseCloudMusicApiEnhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)
 - app 内设置页配置 API 服务地址（如 `http://192.168.1.100:3000`）
+- 手机和电脑需在同一局域网内
+
+**Android 明文 HTTP 配置：**
+- Android 9+ 默认禁止明文 HTTP 请求
+- 需要添加 `network_security_config.xml` 允许对本地 API 地址的明文 HTTP 请求
 
 **登录鉴权：**
-- 手机号 + 密码登录
-- 调用 API 的 `/login/cellphone` 接口
-- 保存返回的 cookie/token 到本地持久化存储
+- 手机号 + 验证码登录（调用 `/captcha/sent` 发送验证码，`/login/cellphone` 登录）
+- 如果 API 支持手机号+密码，也可作为备选
+- 使用 `dio_cookie_manager` + `PersistCookieJar` 管理和持久化登录 cookie
+- 登录凭据使用 `flutter_secure_storage` 安全存储
 - 登录状态过期时提示重新登录
 
 **上传流程：**
-1. 调用云盘上传相关接口
+1. 调用 `/cloud` 接口上传音频文件到云盘
 2. 显示上传进度
-3. 上传成功后弹窗：选择"保留本地文件"或"删除本地文件"
+3. 上传成功后弹窗：选择"保留本地文件"或"删除本地文件"（指裁剪后的最终音频文件；原始下载的临时文件始终自动清理）
 4. 根据用户选择处理本地文件
 
 ### 7. 设置页
 
 - 网易云 API 服务地址配置
 - 网易云账号登录/登出状态
-- 使用 `shared_preferences` 持久化存储配置
+- 使用 `shared_preferences` 持久化存储配置项
+- 登录凭据使用 `flutter_secure_storage` 安全存储
+
+## Android 权限
+
+在 `AndroidManifest.xml` 中声明：
+- `INTERNET` — 网络访问（下载、上传、API 调用）
+
+不需要存储权限，因为文件操作都在 app 自身目录内完成。
 
 ## GitHub Actions 构建
 
