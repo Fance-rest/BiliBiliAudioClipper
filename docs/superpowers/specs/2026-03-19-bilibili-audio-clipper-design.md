@@ -30,7 +30,7 @@
 │  输入区：链接/BV号输入框     │
 │  [解析] 按钮               │
 ├─────────────────────────────┤
-│  信息区：视频标题、时长      │
+│  信息区：封面图+视频标题+时长 │
 │  [下载音频] 按钮 + 进度条   │
 ├─────────────────────────────┤
 │  播放区：播放器控制          │
@@ -55,20 +55,27 @@
 - 完整链接：`https://www.bilibili.com/video/BVxxx`
 - 短链：`https://b23.tv/xxx`（通过 302 重定向解析）
 - 纯 BV 号：`BVxxx`（自动补全为完整链接）
+- AV 号：`av12345`（兼容老链接格式）
 
 **解析流程：**
 1. 识别输入类型（完整链接 / 短链 / 纯BV号）
 2. 短链通过 HEAD 请求获取 302 重定向目标
 3. 提取 BV 号（支持 BV/AV 互转，使用标准 Base58 算法）
 4. 获取 BUVID 指纹：调用 `https://api.bilibili.com/x/frontend/finger/spi` 获取 `buvid3`/`buvid4`，作为 cookie 附加到后续请求
-5. 调用 `https://api.bilibili.com/x/web-interface/wbi/view?bvid=BVxxx`（需 wbi 签名）获取视频信息（标题、时长、cid）
+5. 调用 `https://api.bilibili.com/x/web-interface/wbi/view?bvid=BVxxx`（需 wbi 签名）获取视频信息（标题、时长、cid、封面图 `pic`）
 6. 调用 `https://api.bilibili.com/x/player/wbi/playurl?bvid=BVxxx&cid=xxx&fnval=4048&fourk=1`（需 wbi 签名）获取 DASH 音频流地址
 7. 从 DASH 响应的 `data.dash.audio` 中取最高音质的流 URL
 
 **WBI 签名（必需）：**
 - 登录后调用 `https://api.bilibili.com/x/web-interface/nav` 获取 `wbi.img_url` 和 `wbi.sub_url`，提取 `imgKey` 和 `subKey`
 - 将 `imgKey + subKey`（64 字符）通过固定的 64 位置换表生成 32 位 `mixinKey`
-- 签名步骤：添加 `wts`（Unix 时间戳）→ 参数按 key 排序 → URL 编码 → MD5(编码结果 + mixinKey) → 添加 `w_rid` 参数
+- 置换表（hardcoded）：`[46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52]`
+- 签名步骤：添加 `wts`（Unix 时间戳）→ 参数按 key 排序 → 移除值中的 `!'()*` 字符 → URL 编码 → MD5(编码结果 + mixinKey) → 添加 `w_rid` 参数
+
+**WBI 密钥缓存策略：**
+- 在内存中缓存 `mixinKey`，app 启动时从 nav 接口刷新
+- 当 B站 API 返回 403 或签名错误时，自动重新获取 wbi 密钥并重试请求
+- B站定期轮换 wbi 密钥，因此不能仅在登录时获取一次
 
 **B站登录（QR 码扫码）：**
 - 调用 `https://passport.bilibili.com/x/passport-login/web/qrcode/generate` 生成二维码 URL 和 `qrcode_key`
@@ -135,7 +142,8 @@
 
 **Android 明文 HTTP 配置：**
 - Android 9+ 默认禁止明文 HTTP 请求
-- 需要添加 `network_security_config.xml` 允许对 Tailscale 网段（100.64.0.0/10）的明文 HTTP 请求
+- 由于 `network_security_config.xml` 不支持 CIDR IP 段，采用全局允许明文 HTTP：在 `AndroidManifest.xml` 的 `<application>` 标签添加 `android:usesCleartextTraffic="true"`
+- 这对个人工具可以接受；如需更精细控制，可使用 Tailscale 的 MagicDNS 域名替代原始 IP
 
 **登录鉴权：**
 - 手机号 + 验证码登录（调用 `/captcha/sent` 发送验证码，`/login/cellphone` 登录）
@@ -145,16 +153,29 @@
 - 登录状态过期时提示重新登录
 
 **上传流程：**
-1. 调用 `/cloud` 接口上传音频文件到云盘
-2. 显示上传进度
-3. 上传成功后弹窗：选择"保留本地文件"或"删除本地文件"（指裁剪后的最终音频文件；原始下载的临时文件始终自动清理）
-4. 根据用户选择处理本地文件
+1. 使用 `dio` 的 `FormData` + `MultipartFile` 构造 multipart 请求
+2. 调用 `POST /cloud` 接口，文件字段名为 `songFile`，Content-Type 为 `audio/mp4`
+3. 显示上传进度（通过 dio 的 `onSendProgress` 回调）
+4. 上传成功响应：`{ code: 200, ... }`；失败时根据 `code` 字段提示原因
+5. 上传成功后弹窗：选择"保留本地文件"或"删除本地文件"（指裁剪后的最终音频文件；原始下载的临时文件始终自动清理）
+6. 根据用户选择处理本地文件
 
 ### 7. 设置页
 
-- **B站账号**：QR 码扫码登录/登出，显示登录状态
-- **网易云 API 服务地址**配置
-- **网易云账号**：登录/登出状态
+设置页分三个卡片区域（与 Figma 设计的 iOS grouped-table 风格一致）：
+
+**区域 1 — B站账号**（Figma 设计中缺失，需新增）：
+- 未登录状态：显示"未登录"文字 + "扫码登录"按钮
+- 点击"扫码登录"后：显示 QR 码图片（200x200）+ "等待扫码..."状态文字 + "取消"按钮
+- 已登录状态：显示用户头像（圆形 50x50）+ 用户名 + "退出登录"按钮（红色文字）
+
+**区域 2 — API 服务**（参考 Figma `Settings.tsx`）：
+- 服务器地址输入框，placeholder `http://100.x.x.x:3000`
+
+**区域 3 — 网易云账号**（参考 Figma `Settings.tsx`）：
+- 未登录：手机号输入 + 验证码输入 + "获取验证码"按钮 + "登录"按钮
+- 已登录：头像 + 昵称 + 手机号（部分隐藏）+ "退出登录"按钮
+
 - 使用 `shared_preferences` 持久化存储配置项
 - 登录凭据和 cookie 使用 `flutter_secure_storage` 安全存储
 
@@ -191,6 +212,8 @@
 - 裁剪时间非法（起点 ≥ 终点 或超出时长）：提示并阻止裁剪
 - API 服务不可达：提示检查网络和 API 服务状态
 - 上传失败：提示错误原因，文件保留在本地不删除
+- B站登录过期：当 B站 API 返回 401 或 cookie 失效时，提示用户前往设置页重新扫码登录
+- 网易云登录过期：上传时 API 返回未登录错误，提示用户前往设置页重新登录
 
 ## UI 设计参考
 
@@ -200,6 +223,8 @@ Figma 导出的 React 原型位于 `design/` 目录，可用 `npm install && npm
 - 主页面（`design/src/app/components/Home.tsx`）：链接输入、视频信息、播放器、裁剪控制、重命名+上传
 - 设置页（`design/src/app/components/Settings.tsx`）：API 地址配置、网易云账号登录/登出
 - iOS 风格弹窗（`design/src/app/components/IOSAlert.tsx`）：上传成功后的保留/删除选择
+
+**设计风格：** iOS Human Interface 风格，使用 Flutter 的 Cupertino widgets 优先于 Material Design。圆角卡片（16px radius）、系统蓝 `#007AFF`、灰色背景 `#F2F2F7`。
 
 **不采用的部分（Figma AI 过度生成）：**
 - "音频质量"选择卡片（B站 DASH 直接取最高音质，无需用户选择）
@@ -212,14 +237,16 @@ Figma 导出的 React 原型位于 `design/` 目录，可用 `npm install && npm
 lib/
 ├── main.dart                  # 入口
 ├── models/
-│   ├── video_info.dart        # B站视频信息模型
+│   ├── video_info.dart        # B站视频信息模型（标题、时长、cid、封面图URL）
 │   └── audio_file.dart        # 音频文件模型
 ├── services/
 │   ├── bilibili_service.dart  # B站链接解析和音频下载
 │   ├── audio_service.dart     # 音频裁剪（FFmpeg）
 │   └── netease_service.dart   # 网易云API交互
 ├── providers/
-│   └── app_provider.dart      # 全局状态管理
+│   ├── bilibili_provider.dart # B站解析/下载状态
+│   ├── audio_provider.dart    # 播放/裁剪状态
+│   └── netease_provider.dart  # 网易云登录/上传状态
 ├── pages/
 │   ├── home_page.dart         # 主页面（单页线性流程）
 │   └── settings_page.dart     # 设置页
