@@ -4,6 +4,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bilibili_audio_clipper/models/video_info.dart';
 import 'package:bilibili_audio_clipper/services/bilibili_service.dart';
 
@@ -22,6 +23,11 @@ class BilibiliProvider extends ChangeNotifier {
   String? errorMessage;
   double downloadProgress = 0;
   bool isLoggedIn = false;
+  int selectedPageIndex = 0;
+
+  static const _historyKey = 'video_link_history';
+  static const _maxHistory = 20;
+  List<Map<String, String>> linkHistory = [];
 
   BilibiliProvider(this._service);
 
@@ -33,8 +39,44 @@ class BilibiliProvider extends ChangeNotifier {
       await _applyCookies(cookies);
       isLoggedIn = true;
       try { await _service.refreshWbiKeys(); } catch (_) {}
-      notifyListeners();
     }
+    await _loadHistory();
+    notifyListeners();
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_historyKey);
+    if (raw != null) {
+      linkHistory = raw
+          .map((e) => Map<String, String>.from(jsonDecode(e) as Map))
+          .toList();
+    }
+  }
+
+  Future<void> _saveHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _historyKey,
+      linkHistory.map((e) => jsonEncode(e)).toList(),
+    );
+  }
+
+  void _addToHistory(String link, String title) {
+    // 去重：如果已存在相同链接，先移除旧的
+    linkHistory.removeWhere((e) => e['link'] == link);
+    linkHistory.insert(0, {'link': link, 'title': title});
+    if (linkHistory.length > _maxHistory) {
+      linkHistory = linkHistory.sublist(0, _maxHistory);
+    }
+    _saveHistory();
+    notifyListeners();
+  }
+
+  void removeHistory(int index) {
+    linkHistory.removeAt(index);
+    _saveHistory();
+    notifyListeners();
   }
 
   /// Converts a simple string map into [Cookie] objects and injects them.
@@ -57,8 +99,12 @@ class BilibiliProvider extends ChangeNotifier {
 
   Future<void> parseLink(String input) async {
     parseState = ParseState.loading;
+    downloadState = DownloadState.idle;
+    audioFilePath = null;
+    downloadProgress = 0;
     errorMessage = null;
     videoInfo = null;
+    selectedPageIndex = 0;
     notifyListeners();
     try {
       String resolvedInput = input;
@@ -72,11 +118,26 @@ class BilibiliProvider extends ChangeNotifier {
         avid: idResult.avid,
       );
       parseState = ParseState.success;
+      _addToHistory(input, videoInfo!.title);
     } catch (e) {
       parseState = ParseState.error;
       errorMessage = e.toString();
     }
     notifyListeners();
+  }
+
+  void selectPage(int index) {
+    selectedPageIndex = index;
+    downloadState = DownloadState.idle;
+    audioFilePath = null;
+    notifyListeners();
+  }
+
+  int get currentCid {
+    if (videoInfo != null && videoInfo!.pages.isNotEmpty) {
+      return videoInfo!.pages[selectedPageIndex].cid;
+    }
+    return videoInfo?.cid ?? 0;
   }
 
   Future<void> downloadAudio() async {
@@ -88,10 +149,10 @@ class BilibiliProvider extends ChangeNotifier {
     try {
       final audioUrl = await _service.fetchAudioStreamUrl(
         bvid: videoInfo!.bvid,
-        cid: videoInfo!.cid,
+        cid: currentCid,
       );
       final tempDir = await getTemporaryDirectory();
-      final savePath = '${tempDir.path}/${videoInfo!.bvid}.m4a';
+      final savePath = '${tempDir.path}/${videoInfo!.bvid}_p${selectedPageIndex + 1}.m4a';
       await _service.downloadAudio(
         audioUrl,
         savePath,

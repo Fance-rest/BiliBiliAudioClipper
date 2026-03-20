@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:bilibili_audio_clipper/providers/audio_provider.dart';
 import 'package:bilibili_audio_clipper/providers/bilibili_provider.dart';
+import 'package:bilibili_audio_clipper/providers/netease_provider.dart';
 
 class ClipControls extends StatefulWidget {
   const ClipControls({super.key});
@@ -15,6 +18,7 @@ class _ClipControlsState extends State<ClipControls> {
   late TextEditingController _startSecCtrl;
   late TextEditingController _endMinCtrl;
   late TextEditingController _endSecCtrl;
+  final _fileNameCtrl = TextEditingController();
 
   bool _syncFromProvider = false;
 
@@ -33,6 +37,7 @@ class _ClipControlsState extends State<ClipControls> {
     _startSecCtrl.dispose();
     _endMinCtrl.dispose();
     _endSecCtrl.dispose();
+    _fileNameCtrl.dispose();
     super.dispose();
   }
 
@@ -83,10 +88,64 @@ class _ClipControlsState extends State<ClipControls> {
     );
   }
 
+  Future<void> _saveToLocal(
+    BuildContext context,
+    AudioProvider audioProvider,
+    BilibiliProvider bilibiliProvider,
+  ) async {
+    final srcPath = audioProvider.trimmedFilePath;
+    if (srcPath == null) return;
+
+    try {
+      final title = bilibiliProvider.videoInfo?.title ?? 'audio';
+      final safeName = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+
+      // 通过 MethodChannel 调用原生 MediaStore API 保存到 Downloads
+      const channel = MethodChannel('com.biliaudioclipper/file_saver');
+      await channel.invokeMethod('saveToDownloads', {
+        'srcPath': srcPath,
+        'fileName': '$safeName.m4a',
+        'mimeType': 'audio/mp4',
+      });
+
+      if (context.mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('保存成功'),
+            content: Text('文件已保存到下载目录：\n$safeName.m4a'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('好'),
+                onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('保存失败'),
+            content: Text(e.toString()),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('好'),
+                onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer2<AudioProvider, BilibiliProvider>(
-      builder: (context, audioProvider, bilibiliProvider, _) {
+    return Consumer3<AudioProvider, BilibiliProvider, NeteaseProvider>(
+      builder: (context, audioProvider, bilibiliProvider, neteaseProvider, _) {
         if (audioProvider.totalDuration == null) return const SizedBox.shrink();
 
         // When provider values change (e.g. from markStart/markEnd), sync controllers
@@ -211,12 +270,71 @@ class _ClipControlsState extends State<ClipControls> {
               // Trim success
               if (audioProvider.trimState == TrimState.done) ...[
                 const SizedBox(height: 8),
-                const Row(
+                Row(
                   children: [
-                    Icon(CupertinoIcons.checkmark_circle_fill,
+                    const Icon(CupertinoIcons.checkmark_circle_fill,
                         color: Color(0xFF34C759), size: 16),
-                    SizedBox(width: 6),
-                    Text('裁剪完成', style: TextStyle(color: Color(0xFF34C759), fontSize: 13)),
+                    const SizedBox(width: 6),
+                    const Text('裁剪完成', style: TextStyle(color: Color(0xFF34C759), fontSize: 13)),
+                    const Spacer(),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 0,
+                      onPressed: () => _saveToLocal(context, audioProvider, bilibiliProvider),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CupertinoIcons.arrow_down_doc_fill,
+                              color: Color(0xFF007AFF), size: 15),
+                          SizedBox(width: 4),
+                          Text('保存到本地',
+                              style: TextStyle(color: Color(0xFF007AFF), fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // File name input
+                Row(
+                  children: [
+                    Expanded(
+                      child: CupertinoTextField(
+                        controller: _fileNameCtrl,
+                        placeholder: '输入文件名',
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F2F7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        onChanged: (val) => neteaseProvider.setFileName(val),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '.m4a',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: CupertinoColors.systemGrey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (bilibiliProvider.videoInfo != null) ...[
+                      const SizedBox(width: 6),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minSize: 0,
+                        onPressed: () {
+                          _fileNameCtrl.text = bilibiliProvider.videoInfo!.title;
+                          neteaseProvider.setFileName(bilibiliProvider.videoInfo!.title);
+                        },
+                        child: const Icon(
+                          CupertinoIcons.doc_on_clipboard,
+                          color: Color(0xFF007AFF),
+                          size: 18,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

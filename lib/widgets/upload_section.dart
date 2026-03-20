@@ -13,14 +13,7 @@ class UploadSection extends StatefulWidget {
 }
 
 class _UploadSectionState extends State<UploadSection> {
-  final _fileNameCtrl = TextEditingController();
   bool _dialogShown = false;
-
-  @override
-  void dispose() {
-    _fileNameCtrl.dispose();
-    super.dispose();
-  }
 
   void _showUploadSuccessDialog(
     BuildContext context,
@@ -75,12 +68,6 @@ class _UploadSectionState extends State<UploadSection> {
             ? audioProvider.trimmedFilePath
             : bilibiliProvider.audioFilePath;
 
-        // Populate default file name from video title once
-        if (_fileNameCtrl.text.isEmpty && bilibiliProvider.videoInfo != null) {
-          _fileNameCtrl.text = bilibiliProvider.videoInfo!.title;
-          neteaseProvider.setFileName(bilibiliProvider.videoInfo!.title);
-        }
-
         // Show success dialog after build
         if (neteaseProvider.uploadState == UploadState.done) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -105,34 +92,6 @@ class _UploadSectionState extends State<UploadSection> {
               const Text(
                 '上传到网易云盘',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-
-              // File name input row
-              Row(
-                children: [
-                  Expanded(
-                    child: CupertinoTextField(
-                      controller: _fileNameCtrl,
-                      placeholder: '文件名',
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF2F2F7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      onChanged: (val) => neteaseProvider.setFileName(val),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    '.m4a',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: CupertinoColors.systemGrey,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
               ),
               const SizedBox(height: 12),
 

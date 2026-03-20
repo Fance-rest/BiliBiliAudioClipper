@@ -94,6 +94,53 @@ class _LinkInputState extends State<LinkInput> {
                 ),
               ],
 
+              // History
+              if (provider.linkHistory.isNotEmpty && provider.parseState != ParseState.success) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  '历史记录',
+                  style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
+                ),
+                const SizedBox(height: 6),
+                ...List.generate(provider.linkHistory.length, (i) {
+                  final item = provider.linkHistory[i];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: GestureDetector(
+                      onTap: () {
+                        _controller.text = item['link']!;
+                        provider.parseLink(item['link']!);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.clock, size: 14, color: CupertinoColors.systemGrey),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item['title'] ?? item['link']!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => provider.removeHistory(i),
+                              child: const Icon(CupertinoIcons.xmark, size: 14, color: CupertinoColors.systemGrey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
               // Video info result card
               if (provider.parseState == ParseState.success && provider.videoInfo != null) ...[
                 const SizedBox(height: 12),
@@ -145,6 +192,66 @@ class _LinkInputState extends State<LinkInput> {
                           ),
                         ],
                       ),
+                      // Page selector for multi-P videos
+                      if (provider.videoInfo!.hasMultiplePages) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F2F7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemCount: provider.videoInfo!.pages.length,
+                            itemBuilder: (context, i) {
+                              final page = provider.videoInfo!.pages[i];
+                              final selected = i == provider.selectedPageIndex;
+                              return GestureDetector(
+                                onTap: () => provider.selectPage(i),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: selected ? const Color(0xFFE5F1FF) : null,
+                                    border: i < provider.videoInfo!.pages.length - 1
+                                        ? const Border(bottom: BorderSide(color: Color(0xFFE5E5EA), width: 0.5))
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        'P${i + 1}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: selected ? const Color(0xFF007AFF) : CupertinoColors.systemGrey,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          page.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: selected ? const Color(0xFF007AFF) : CupertinoColors.black,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        _formatDuration(page.duration),
+                                        style: const TextStyle(fontSize: 12, color: CupertinoColors.systemGrey),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
 
                       // Download button (full width)

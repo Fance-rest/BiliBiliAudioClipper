@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -13,9 +15,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final _apiUrlCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _captchaCtrl = TextEditingController();
-  bool _captchaSent = false;
 
   @override
   void initState() {
@@ -29,8 +28,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _apiUrlCtrl.dispose();
-    _phoneCtrl.dispose();
-    _captchaCtrl.dispose();
     super.dispose();
   }
 
@@ -73,6 +70,37 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
       ),
       child: child,
+    );
+  }
+
+  Widget _buildQrDisplay(String qrData) {
+    if (qrData.startsWith('data:image')) {
+      final bytes = base64Decode(qrData.split(',').last);
+      return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+    }
+    return QrImageView(
+      data: qrData,
+      version: QrVersions.auto,
+      size: 200,
+    );
+  }
+
+  Future<void> _showErrorDialog(String title, Object error) async {
+    if (!mounted) {
+      return;
+    }
+    await showCupertinoDialog(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(error.toString()),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('好'),
+            onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -122,7 +150,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    '请用哔哩哔哩 App 扫描下方二维码',
+                    '请用另一台设备上的哔哩哔哩 App 扫描下方二维码',
                     style: TextStyle(fontSize: 14, color: CupertinoColors.systemGrey),
                     textAlign: TextAlign.center,
                   ),
@@ -219,67 +247,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         _buildSectionHeader('网易云账号'),
         _buildCard([
-          if (!provider.isLoggedIn) ...[
-            _buildCardRow(
-              child: CupertinoTextField(
-                controller: _phoneCtrl,
-                placeholder: '手机号',
-                keyboardType: TextInputType.phone,
-                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-                decoration: const BoxDecoration(),
-              ),
-            ),
-            _buildCardRow(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: CupertinoTextField(
-                      controller: _captchaCtrl,
-                      placeholder: '验证码',
-                      keyboardType: TextInputType.number,
-                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-                      decoration: const BoxDecoration(),
-                    ),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: _captchaSent
-                        ? null
-                        : () async {
-                            final phone = _phoneCtrl.text.trim();
-                            if (phone.isEmpty) return;
-                            try {
-                              await provider.sendCaptcha(phone);
-                              setState(() => _captchaSent = true);
-                            } catch (e) {
-                              if (mounted) {
-                                showCupertinoDialog(
-                                  context: context,
-                                  builder: (_) => CupertinoAlertDialog(
-                                    title: const Text('发送失败'),
-                                    content: Text(e.toString()),
-                                    actions: [
-                                      CupertinoDialogAction(
-                                        child: const Text('好'),
-                                        onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: Text(
-                      _captchaSent ? '已发送' : '获取验证码',
-                      style: TextStyle(
-                        color: _captchaSent ? CupertinoColors.systemGrey : const Color(0xFF007AFF),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          if (!provider.isLoggedIn && provider.qrCodeUrl == null && provider.qrLoginStatus.isEmpty) ...[
             _buildCardRow(
               isLast: true,
               child: CupertinoButton(
@@ -287,30 +255,44 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: const Color(0xFF007AFF),
                 borderRadius: BorderRadius.circular(8),
                 onPressed: () async {
-                  final phone = _phoneCtrl.text.trim();
-                  final captcha = _captchaCtrl.text.trim();
-                  if (phone.isEmpty || captcha.isEmpty) return;
                   try {
-                    await provider.login(phone, captcha);
+                    await provider.setBaseUrl(_apiUrlCtrl.text.trim());
+                    await provider.startQrLogin();
                   } catch (e) {
-                    if (mounted) {
-                      showCupertinoDialog(
-                        context: context,
-                        builder: (_) => CupertinoAlertDialog(
-                          title: const Text('登录失败'),
-                          content: Text(e.toString()),
-                          actions: [
-                            CupertinoDialogAction(
-                              child: const Text('好'),
-                              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
+                    await _showErrorDialog('登录失败', e);
                   }
                 },
-                child: const Text('登录', style: TextStyle(color: CupertinoColors.white)),
+                child: const Text('扫码登录', style: TextStyle(color: CupertinoColors.white)),
+              ),
+            ),
+          ] else if (!provider.isLoggedIn) ...[
+            _buildCardRow(
+              isLast: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    provider.qrLoginStatus.isEmpty ? '请使用网易云音乐 App 扫码' : provider.qrLoginStatus,
+                    style: const TextStyle(fontSize: 14, color: CupertinoColors.systemGrey),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  if (provider.qrCodeUrl != null)
+                    Center(
+                      child: _buildQrDisplay(provider.qrCodeUrl!),
+                    )
+                  else
+                    const Center(child: CupertinoActivityIndicator()),
+                  const SizedBox(height: 8),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => provider.cancelQrLogin(),
+                    child: const Text(
+                      '取消',
+                      style: TextStyle(color: CupertinoColors.destructiveRed),
+                    ),
+                  ),
+                ],
               ),
             ),
           ] else ...[
@@ -348,6 +330,11 @@ class _SettingsPageState extends State<SettingsPage> {
                           Text(
                             _maskPhone(provider.phone!),
                             style: const TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
+                          )
+                        else
+                          const Text(
+                            '扫码登录',
+                            style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
                           ),
                       ],
                     ),

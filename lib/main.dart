@@ -27,10 +27,14 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AudioProvider(audioService)),
         ChangeNotifierProvider(create: (_) => NeteaseProvider(neteaseService)..loadSettings()),
       ],
-      child: const CupertinoApp(
+      child: CupertinoApp(
         title: '音频提取',
-        theme: CupertinoThemeData(primaryColor: Color(0xFF007AFF), scaffoldBackgroundColor: Color(0xFFF2F2F7)),
-        home: HomePage(),
+        theme: const CupertinoThemeData(
+          brightness: Brightness.light,
+          primaryColor: Color(0xFF007AFF),
+          scaffoldBackgroundColor: Color(0xFFF2F2F7),
+        ),
+        home: const HomePage(),
         debugShowCheckedModeBanner: false,
       ),
     );
